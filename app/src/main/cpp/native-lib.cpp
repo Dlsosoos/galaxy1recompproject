@@ -6,6 +6,8 @@
 #define TAG "G1Recomp"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, TAG, __VA_ARGS__)
 
+std::string g1_extract(int fd, const std::string& keyHex, const std::string& outDir);
+
 static bool g_running = false;
 
 static std::string J(JNIEnv* e, jstring s) {
@@ -37,6 +39,11 @@ Java_com_pedro_galaxy1recomp_NativeBridge_nativeStart(JNIEnv* e, jobject, jint f
     close(fd);
     g_running = false;
     return 1;
+}
+
+JNIEXPORT jstring JNICALL
+Java_com_pedro_galaxy1recomp_NativeBridge_nativeExtract(JNIEnv* e, jobject, jint fd, jstring key, jstring out) {
+    return e->NewStringUTF(g1_extract(fd, J(e, key), J(e, out)).c_str());
 }
 
 JNIEXPORT void JNICALL

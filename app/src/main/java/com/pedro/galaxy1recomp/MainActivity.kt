@@ -19,6 +19,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 
@@ -65,6 +66,9 @@ fun PlayTab(store: Store) {
     var uriStr by remember { mutableStateOf(store.getStr("rom_uri", "")) }
     var info by remember { mutableStateOf<RomInfo?>(null) }
     var status by remember { mutableStateOf("") }
+    var keyHex by remember { mutableStateOf(store.getStr("key_hex", "")) }
+    var busy by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
 
     LaunchedEffect(uriStr) {
         if (uriStr.isNotEmpty()) info = withContext(Dispatchers.IO) { RomValidator.inspect(ctx, Uri.parse(uriStr)) }
@@ -78,6 +82,17 @@ fun PlayTab(store: Store) {
                 store.putStr("rom_uri", uri.toString()); store.putStr("rom_name", n)
                 name = n; uriStr = uri.toString(); status = ""
             } else status = "Formato não suportado. Use .iso ou .wbfs"
+        }
+    }
+
+    val keyPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            val bytes = ctx.contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: ByteArray(0)
+            val hex = if (bytes.size == 16) bytes.joinToString("") { "%02x".format(it) }
+                      else String(bytes).filter { !it.isWhitespace() }
+            if (hex.length == 32 && hex.all { it in "0123456789abcdefABCDEF" }) {
+                keyHex = hex; store.putStr("key_hex", hex); status = "Chave carregada."
+            } else status = "Arquivo de chave inválido: precisa de 16 bytes ou 32 caracteres hexadecimais."
         }
     }
 
@@ -98,6 +113,26 @@ fun PlayTab(store: Store) {
                 }
             }
         }
+        OutlinedButton(onClick = { keyPicker.launch(arrayOf("*/*")) }, modifier = Modifier.fillMaxWidth()) {
+            Text(if (keyHex.isEmpty()) "Escolher chave comum do seu Wii" else "Chave carregada ✔ (trocar)")
+        }
+        OutlinedButton(
+            enabled = info?.ok == true && keyHex.isNotEmpty() && !busy && NativeBridge.loaded,
+            modifier = Modifier.fillMaxWidth(),
+            onClick = {
+                val pfd = try { ctx.contentResolver.openFileDescriptor(Uri.parse(uriStr), "r") } catch (_: Exception) { null }
+                if (pfd == null) status = "Não foi possível abrir a ROM"
+                else {
+                    val fd = pfd.detachFd()
+                    val out = File(ctx.filesDir, "game").apply { mkdirs() }.absolutePath
+                    busy = true; status = "Lendo o disco…"
+                    scope.launch(Dispatchers.IO) {
+                        val r = NativeBridge.nativeExtract(fd, keyHex, out)
+                        status = r; busy = false
+                    }
+                }
+            }
+        ) { Text("Preparar jogo (ler disco e extrair main.dol)") }
         Button(
             enabled = info?.ok == true,
             modifier = Modifier.fillMaxWidth(),
