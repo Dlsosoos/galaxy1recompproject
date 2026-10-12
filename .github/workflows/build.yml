@@ -30,3 +30,4 @@ jobs:
           tag_name: build-${{ github.run_number }}
           name: Galaxy1Recomp build ${{ github.run_number }}
           files: Galaxy1Recomp.apk
+          
