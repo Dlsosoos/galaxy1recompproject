@@ -88,11 +88,18 @@ fun PlayTab(store: Store) {
     val keyPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
             val bytes = ctx.contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: ByteArray(0)
-            val hex = if (bytes.size == 16) bytes.joinToString("") { "%02x".format(it) }
+            // 16 bytes = chave pura | 128 bytes = otp.bin (chave em 0x14) | 1024 bytes = keys.bin do BootMii (chave em 0x114)
+            val raw: ByteArray? = when (bytes.size) {
+                16 -> bytes
+                128 -> bytes.copyOfRange(0x14, 0x24)
+                1024 -> bytes.copyOfRange(0x114, 0x124)
+                else -> null
+            }
+            val hex = if (raw != null) raw.joinToString("") { "%02x".format(it) }
                       else String(bytes).filter { !it.isWhitespace() }
             if (hex.length == 32 && hex.all { it in "0123456789abcdefABCDEF" }) {
                 keyHex = hex; store.putStr("key_hex", hex); status = "Chave carregada."
-            } else status = "Arquivo de chave inválido: precisa de 16 bytes ou 32 caracteres hexadecimais."
+            } else status = "Arquivo inválido: use o keys.bin (1024 bytes), otp.bin (128 bytes), 16 bytes ou 32 caracteres hexadecimais."
         }
     }
 
@@ -114,7 +121,7 @@ fun PlayTab(store: Store) {
             }
         }
         OutlinedButton(onClick = { keyPicker.launch(arrayOf("*/*")) }, modifier = Modifier.fillMaxWidth()) {
-            Text(if (keyHex.isEmpty()) "Escolher chave comum do seu Wii" else "Chave carregada ✔ (trocar)")
+            Text(if (keyHex.isEmpty()) "Escolher keys.bin do seu Wii" else "Chave carregada ✔ (trocar)")
         }
         OutlinedButton(
             enabled = info?.ok == true && keyHex.isNotEmpty() && !busy && NativeBridge.loaded,
